@@ -1,0 +1,30 @@
+---
+# =====================================================================-
+# API Version: v1
+# Kind:       PersistentVolumeClaim
+# Metadata:
+#   Name:     petrvs-storage
+# ----------------------------------------------------------------------
+# Author:     erivandosena@gmail.com
+# Created:    2025-04-18
+# Version:    1.0.0
+# ----------------------------------------------------------------------
+# Description: Reivindicação de volume persistente para armazenar dados
+#              da aplicação Petrvs.
+# ----------------------------------------------------------------------
+# Usage:      kubectl apply -f pvc-petrvs-storage.yaml
+# =====================================================================-
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: petrvs-storage-pvc
+  annotations:
+    nfs.io/storage-path: "data"
+spec:
+  accessModes:
+  - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: nfs-storage
+  volumeMode: Filesystem

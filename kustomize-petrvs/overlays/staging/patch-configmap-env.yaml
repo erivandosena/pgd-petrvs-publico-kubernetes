@@ -1,0 +1,11 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: petrvs-env
+data:
+  APP_NAMESPACE: "petrvs-stg"
+  MARIADB_MASTER_HOST: "mariadb-0.mariadb.petrvs-stg.svc.cluster.local"
+  MARIADB_MASTER_WORKER1: "mariadb-1.mariadb.petrvs-stg.svc.cluster.local"
+  MARIADB_MASTER_WORKER2: "mariadb-2.mariadb.petrvs-stg.svc.cluster.local"
+  MARIADB_CLUSTER_ADDRESS: "gcomm://mariadb-0.mariadb.petrvs-stg.svc.cluster.local:4567"

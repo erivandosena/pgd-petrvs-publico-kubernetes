@@ -1,0 +1,216 @@
+---
+# =====================================================================-
+# API Version: batch/v1
+# Kind:       Job
+# Metadata:
+#   Name:     petrvs-db-init
+# ----------------------------------------------------------------------
+# Author:     erivandosena@gmail.com
+# Created:    2025-04-25
+# Version:    1.0.0
+# ----------------------------------------------------------------------
+# Usage:      Applied via kustomize patch
+# =====================================================================-
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: petrvs-db-init
+spec:
+  template:
+    spec:
+      initContainers:
+      - name: wait-for-galera-synced
+        image: mariadb:11.3.2
+        command:
+        - bash
+        - -c
+        - |
+          echo "Aguardando Galera Cluster (estado Synced)."
+          while true; do
+            ready_nodes=0
+            for i in 0 1 2; do
+              state=$(mariadb -h mariadb-$i.mariadb.petrvs-prd.svc.cluster.local -u$MARIADB_REPLICATION_USER -p$MARIADB_REPLICATION_PASSWORD -e "SHOW STATUS LIKE 'wsrep_local_state_comment';" 2>/dev/null | grep -w 'Synced')
+              if [ ! -z "$state" ]; then
+                ready_nodes=$((ready_nodes+1))
+              fi
+            done
+            echo "$ready_nodes de 3 nós Galera sincronizados."
+            if [ "$ready_nodes" -eq 3 ]; then
+              echo "Todos os nós Galera estão Synced. Continuando."
+              break
+            fi
+            sleep 3
+          done
+      containers:
+      - name: db-init
+        image: segescginf/pgdpetrvs:2.3.16
+        command: [ "/bin/bash", "-c" ]
+        args:
+        - |
+          #!/bin/bash
+          set -eo pipefail
+
+          echo "[Init] Aguardando MariaDB ficar disponível."
+          for i in {0..2}; do
+            mariadb -h"mariadb-$i.mariadb.petrvs-prd.svc.cluster.local" \
+              -u"$MARIADB_REPLICATION_USER" \
+              -p"$MARIADB_REPLICATION_PASSWORD" \
+              -e "SHOW TABLES FROM $DB_DATABASE;" || echo "[WARN] Falha ao verificar nó $i"
+            echo "mariadb-$i.mariadb.petrvs-prd.svc.cluster.local"
+          done
+
+          echo "[Init] Executando migrations principais."
+          php artisan config:clear
+          php artisan migrate --force -v || {
+            echo "Erro nas migrations principais. Abortando."
+            exit 1
+          }
+
+          echo "[Init] Verificar se a tenant existe."
+          tenant_exists() {
+              local result=$(php artisan tinker --execute='
+                  $tenant = \App\Models\Tenant::find("mgi");
+                  echo $tenant ? "true" : "false";
+              ')
+              [[ "$result" == *"true"* ]]
+          }
+
+          if ! tenant_exists; then
+
+              echo "[Init] Executando migrations das tenants..."
+              if ! php artisan tenants:migrate --force -v; then
+                  echo "[ERRO] Falha nas migrations das tenants. Abortando."
+                  exit 1
+              fi
+
+              echo "[Init] Configurando environment para seeds..."
+              APP_ENV="${APP_ENV:-production}"
+              APP_ENV_UPPER=$(echo "$APP_ENV" | tr '[:lower:]' '[:upper:]')
+              SEEDER_VAR="DB_SEEDER_${APP_ENV_UPPER}"
+              SEEDER_CLASS=$(printenv "$SEEDER_VAR")
+
+              echo "[Init] Executando seeds..."
+              if [ -n "$SEEDER_CLASS" ]; then
+                  if ! php artisan tenants:run db:seed --option="class=$SEEDER_CLASS" -v; then
+                      echo "[ERRO] Falha no seed $SEEDER_CLASS"
+                      exit 1
+                  fi
+              else
+                  if ! php artisan tenants:run db:seed --option="class=DeployPRODSeeder" -v; then
+                      echo "[WARN] Seed fallback falhou (pode já ter sido executado)"
+                      # Não aborta para fallback
+                  fi
+              fi
+
+              php artisan tinker --execute='
+              try {
+                \App\Models\Tenant::create([
+                  "id" => "mgi",
+                  "data" => [
+                    "sigla" => "MGI",
+                    "nome" => "Ministério da Gestão e Inovação",
+                    "abrangencia" => "Nacional",
+                    "cod_ibge" => "5300108",
+                    "dominio" => env("SESSION_DOMAIN"),
+                    "login_type" => "google",
+                    "google_client_id" => env("GOOGLE_CLIENT_ID"),
+                    "google_client_secret" => env("GOOGLE_CLIENT_SECRET")
+                  ]
+                ]);
+                echo "[Init] Tenant criado com sucesso.";
+              } catch(\Exception $e) {
+                echo "Erro ao criar tenant: " . $e->getMessage();
+              }
+              ' || {
+                echo "[ERRO] Falha ao criar tenant MGI."
+                exit 1
+              }
+
+              php artisan tinker --execute='
+              use Illuminate\Support\Facades\Hash;
+              try {
+                  $tenant = \App\Models\Tenant::find("mgi");
+                  if (!$tenant) {
+                      throw new Exception("Tenant MGI não encontrado");
+                  }
+
+                  tenancy()->initialize($tenant);
+
+                  \App\Models\PainelUsuario::create([
+                      "email" => env("SUPERUSER_EMAIL"),
+                      "nome" => "Administrador",
+                      "cpf" => env("SUPERUSER_CPF"),
+                      "password" => Hash::make(env("SUPERUSER_PASSWORD")),
+                      "email_verified_at" => now(),
+                      "nivel" => 1
+                  ]);
+
+                  echo "[Init] Usuário superadmin criado com sucesso.";
+              } catch(\Exception $e) {
+                  echo "Erro ao criar usuário: " . $e->getMessage();
+                  exit(1);
+              }
+              ' || {
+                  echo "[ERRO] Falha ao criar usuário superadmin."
+                  exit 1
+              }
+
+              echo "[Init] Executando migrations tenant..."
+              php artisan tinker --execute='
+                  Tenant::all()
+                      ->reject(fn($t) => str_contains($t->id, "update_perfil_usuarios"))
+                      ->each(function($tenant) {
+                          echo "\n=== Migrando {$tenant->id} ===\n";
+
+                          tenancy()->initialize($tenant);
+
+                          try {
+                              // Caminho correto para migrations
+                              $migrationsPath = database_path("migrations/tenant/*.php");
+
+                              // Filtra migrations problemáticas
+                              $migrations = collect(glob($migrationsPath))
+                                  ->reject(fn($m) => str_contains($m, "update_perfil_usuarios"))
+                                  ->values();
+
+                              // Executa cada migration individualmente
+                              foreach ($migrations as $migration) {
+                                  $relativePath = str_replace(base_path()."/", "", $migration);
+                                  echo "Executando: {$relativePath}\n";
+
+                                  Artisan::call("migrate", [
+                                      "--force" => true,
+                                      "--path" => $relativePath
+                                  ]);
+                                  echo Artisan::output();
+                              }
+
+                          } catch (\Exception $e) {
+                              echo "\n[ERRO] " . $e->getMessage() . "\n";
+                          }
+
+                          tenancy()->end();
+                      });
+              '
+
+              echo "[Init] Limpando caches após inicialização."
+              php artisan config:clear
+              php artisan cache:clear
+
+              echo "[Init] Iniciando serviço cron..."
+              curl -sLO "https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+              chmod +x kubectl && mv kubectl /usr/local/bin/
+              kubectl delete pod -n petrvs-prd $(kubectl get pods -n petrvs-prd | grep petrvs-queue | awk '{print $1}' | head -n1) --force --grace-period=0
+
+              echo "[Init] Regerando caches..."
+              php artisan config:cache
+              php artisan route:cache
+              php artisan storage:link
+
+              echo "[SUCESSO] Configuração da tenant concluída"
+          else
+              echo "[Info] Tenant já existe."
+          fi
+
+          echo "🔑 Painel SaaS: $APP_URL/panel"
+          echo "🔐 Login: $APP_URL/login (via Google)"

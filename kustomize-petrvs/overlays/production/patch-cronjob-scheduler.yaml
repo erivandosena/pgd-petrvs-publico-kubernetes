@@ -1,0 +1,44 @@
+---
+# =====================================================================-
+# API Version: batch/v1
+# Kind:       CronJob
+# Metadata:
+#   Name:     petrvs-scheduler
+# ----------------------------------------------------------------------
+# Author:     erivandosena@gmail.com
+# Created:    2025-04-24
+# Version:    1.0.0
+# ----------------------------------------------------------------------
+# Usage:      Applied via kustomize patch
+# =====================================================================-
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: petrvs-scheduler
+spec:
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          initContainers:
+          - name: wait-for-galera-synced
+            command:
+            - bash
+            - -c
+            - |
+              echo "Aguardando Galera Cluster (estado Synced)..."
+              while true; do
+                ready_nodes=0
+                for i in 0 1 2; do
+                  state=$(mariadb -h mariadb-$i.mariadb.petrvs-prd.svc.cluster.local -u$MARIADB_REPLICATION_USER -p$MARIADB_REPLICATION_PASSWORD -e "SHOW STATUS LIKE 'wsrep_local_state_comment';" 2>/dev/null | grep -w 'Synced')
+                  if [ ! -z "$state" ]; then
+                    ready_nodes=$((ready_nodes+1))
+                  fi
+                done
+                echo "$ready_nodes de 3 nós Galera sincronizados..."
+                if [ "$ready_nodes" -eq 3 ]; then
+                  echo "Todos os nós Galera estão Synced. Continuando..."
+                  break
+                fi
+                sleep 3
+              done

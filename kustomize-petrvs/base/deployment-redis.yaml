@@ -1,0 +1,69 @@
+---
+# =====================================================================-
+# API Version: apps/v1
+# Kind:       Deployment
+# Metadata:
+#   Name:     redis
+# ----------------------------------------------------------------------
+# Author:     erivandosena@gmail.com
+# Created:    2025-04-11
+# Version:    1.0.0
+# ----------------------------------------------------------------------
+# Description: Deployment do serviço Redis, utilizado como cache e
+#              armazenamento de dados temporários pela aplicação.
+# ----------------------------------------------------------------------
+# Usage:      kubectl apply -f deployment-redis.yaml
+# =====================================================================-
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: petrvs-redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: petrvs-redis
+  template:
+    metadata:
+      labels:
+        app: petrvs-redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:7.2
+        command: [ "sh", "-c" ]
+        args:
+        - |
+          exec redis-server \
+          --appendonly yes \
+          --dir /data \
+          --requirepass "$REDIS_PASSWORD"
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "64Mi"
+          limits:
+            cpu: "350m"
+            memory: "256Mi"
+        ports:
+        - containerPort: 6379
+          name: redis
+        envFrom:
+        - configMapRef:
+            name: petrvs-env
+        - secretRef:
+            name: petrvs-secret-env
+        env:
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: petrvs-secret-env
+              key: REDIS_PASSWORD
+        volumeMounts:
+        - name: redis-data
+          mountPath: /data
+      volumes:
+      - name: redis-data
+        persistentVolumeClaim:
+          claimName: redis-pvc

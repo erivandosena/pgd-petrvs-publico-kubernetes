@@ -1,0 +1,200 @@
+---
+# =====================================================================-
+# API Version: batch/v1
+# Kind:       Job
+# Metadata:
+#   Name:     petrvs-db-init
+# ----------------------------------------------------------------------
+# Author:     erivandosena@gmail.com
+# Created:    2025-04-16
+# Version:    1.0.0
+# ----------------------------------------------------------------------
+# Description: Job responsável pela inicialização do banco de dados da
+#              aplicação Petrvs, executando scripts de setup.
+# ----------------------------------------------------------------------
+# Usage:      kubectl apply -f job-petrvs-db-init.yaml
+# =====================================================================-
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: petrvs-db-init
+spec:
+  backoffLimit: 15
+  ttlSecondsAfterFinished: 86400 # 24h
+  template:
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: mariadb
+      securityContext:
+        runAsUser: 33
+        runAsGroup: 33
+        fsGroup: 33
+      initContainers:
+      - name: storage-permissions
+        image: segescginf/pgdpetrvs:2.3.16
+        command: [ "/bin/bash", "-c" ]
+        args:
+        - |
+          echo "[Init] Corrigindo permissões de diretórios Laravel..."
+          mkdir -p \
+            /var/www/storage/framework/cache \
+            /var/www/storage/framework/sessions \
+            /var/www/storage/framework/views \
+            /var/www/storage/logs \
+            /var/www/bootstrap/cache
+
+          chown -Rf www-data:www-data /var/www/storage
+          chown -Rfv www-data:www-data /var/www/bootstrap/cache
+          chmod -Rf ug+rwX /var/www/storage
+          chmod -Rf ug+rwX /var/www/bootstrap/cache
+          chmod -Rf 775 /var/www/database/migrations
+          chown -Rf www-data:www-data /var/www/database/migrations
+
+          find /var/www -type d -exec chmod -f 755 {} \;
+          find /var/www -type f -exec chmod -f 644 {} \;
+
+          if [ -f /var/www/.env ]; then
+            chown -fv www-data:www-data /var/www/.env
+            chmod -fv 640 /var/www/.env
+          fi
+        securityContext:
+          runAsUser: 0
+          runAsGroup: 33
+        volumeMounts:
+        - name: storage-logs
+          mountPath: /var/www/storage
+
+      - name: gen-laravel-env
+        image: busybox:1.35
+        command: [ "sh", "-c" ]
+        args:
+        - |
+          echo "[Init] Gerando .env para Laravel..."
+          printenv | grep -E '^(APP_|DB_|REDIS_|MAIL_|LOG_|SESSION_|AWS_|CACHE_|QUEUE_|BROADCAST_|PUSHER_|MIX_|SANCTUM_|TRUSTED_|GOOGLE_|GOVBR_|LOGIN_TYPE|SUPERUSER_|TELESCOPE_)' > /merged/.env
+        securityContext:
+          runAsUser: 0
+          runAsGroup: 33
+        envFrom:
+        - configMapRef:
+            name: petrvs-env
+        - secretRef:
+            name: petrvs-secret-env
+        volumeMounts:
+        - name: merged-env
+          mountPath: /merged
+
+      - name: prepare-psysh-directory
+        image: busybox:1.35
+        command: [ "sh", "-c" ]
+        args:
+        - |
+          echo "[Init] Criando diretório para PsySH..."
+          mkdir -p /var/www/.config/psysh
+          chmod -Rfv 777 /var/www/.config
+        securityContext:
+          runAsUser: 0
+        volumeMounts:
+        - name: psysh-config
+          mountPath: /var/www/.config
+
+      - name: wait-for-galera-synced
+        image: mariadb:11.3.2
+        command:
+        - bash
+        - -c
+        - |
+          echo "Aguardando Galera Cluster (estado Synced)..."
+          while true; do
+            ready_nodes=0
+            for i in 0 1 2; do
+              state=$(mariadb -h mariadb-$i.mariadb.petrvs.svc.cluster.local -u$MARIADB_REPLICATION_USER -p$MARIADB_REPLICATION_PASSWORD -e "SHOW STATUS LIKE 'wsrep_local_state_comment';" 2>/dev/null | grep -w 'Synced')
+              if [ ! -z "$state" ]; then
+                ready_nodes=$((ready_nodes+1))
+              fi
+            done
+            echo "$ready_nodes de 3 nós Galera sincronizados..."
+            if [ "$ready_nodes" -eq 3 ]; then
+              echo "Todos os nós Galera estão Synced. Continuando..."
+              break
+            fi
+            sleep 3
+          done
+        envFrom:
+        - configMapRef:
+            name: petrvs-env
+        - secretRef:
+            name: petrvs-secret-env
+      # terminationGracePeriodSeconds: 15
+      containers:
+      - name: db-init
+        image: segescginf/pgdpetrvs:2.3.16
+        command: [ "/bin/bash", "-c" ]
+        args:
+        - |
+          #!/bin/bash
+          set -eo pipefail
+
+          echo "[Init] Aguardando MariaDB ficar disponível."
+          for i in {0..2}; do
+            mariadb -h"mariadb-$i.mariadb.petrvs-prd.svc.cluster.local" \
+              -u"$MARIADB_REPLICATION_USER" \
+              -p"$MARIADB_REPLICATION_PASSWORD" \
+              -e "SHOW TABLES FROM $DB_DATABASE;" || echo "[WARN] Falha ao verificar nó $i"
+            echo "mariadb-$i.mariadb.petrvs-prd.svc.cluster.local"
+          done
+
+          echo "[Init] Executando migrations principais."
+          php artisan config:clear
+          php artisan migrate --force -v || {
+            echo "Erro nas migrations principais. Abortando."
+            exit 1
+          }
+
+          echo "[Init] Executando migrations das tenants..."
+          php artisan tenants:migrate --force -v || {
+            echo "Erro nas migrations das tenants. Abortando."
+            exit 1
+          }
+
+          echo "[Init] Executando seed para DeployPRODSeeder..."
+          php artisan tenants:run db:seed --option="class=DeployPRODSeeder" -v || {
+            echo "Erro ao executar DeployPRODSeeder. Abortando."
+            exit 1
+          }
+
+          echo "[Init] Regerando caches..."
+          php artisan config:cache
+          php artisan route:cache
+
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          runAsUser: 0
+          runAsGroup: 33
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "1"
+            memory: "1024Mi"
+        envFrom:
+        - configMapRef:
+            name: petrvs-env
+        - secretRef:
+            name: petrvs-secret-env
+        volumeMounts:
+        - name: storage-logs
+          mountPath: /var/www/storage
+        - name: psysh-config
+          mountPath: /var/www/.config
+        - name: merged-env
+          mountPath: /var/www/.env
+          subPath: .env
+      volumes:
+      - name: storage-logs
+        persistentVolumeClaim:
+          claimName: petrvs-storage-pvc
+      - name: psysh-config
+        emptyDir: {}
+      - name: merged-env
+        emptyDir: {}

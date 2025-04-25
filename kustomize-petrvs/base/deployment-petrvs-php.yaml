@@ -1,0 +1,184 @@
+---
+# =====================================================================-
+# API Version: apps/v1
+# Kind:       Deployment
+# Metadata:
+#   Name:     petrvs-php
+# ----------------------------------------------------------------------
+# Author:     erivandosena@gmail.com
+# Created:    2025-04-09
+# Version:    1.0.0
+# ----------------------------------------------------------------------
+# Description: Deployment do backend PHP da aplicação Petrvs,
+#              com configurações de réplicas e probes de saúde.
+# ----------------------------------------------------------------------
+# Usage:      kubectl apply -f deployment-petrvs-php.yaml
+# =====================================================================-
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: petrvs-php
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: petrvs-php
+  template:
+    metadata:
+      labels:
+        app: petrvs-php
+    spec:
+      serviceAccountName: petrvs-app-sa
+      securityContext:
+        runAsUser: 33
+        runAsGroup: 33
+        fsGroup: 33
+      initContainers:
+      - name: storage-permissions
+        image: segescginf/pgdpetrvs:2.3.16
+        command: [ "/bin/sh", "-c" ]
+        args:
+        - |
+          echo "[Init] Ajustando permissões..."
+          mkdir -p \
+            /var/www/storage/framework/cache \
+            /var/www/storage/framework/sessions \
+            /var/www/storage/framework/views \
+            /var/www/storage/logs \
+            /var/www/bootstrap/cache
+
+          chown -Rf www-data:www-data /var/www/storage
+          chown -Rf www-data:www-data /var/www/bootstrap/cache
+          chmod -Rf ug+rwX /var/www/storage
+          chmod -Rf ug+rwX /var/www/bootstrap/cache
+
+          find /var/www -type d -exec chmod -f 755 {} \;
+          find /var/www -type f -exec chmod -f 644 {} \;
+
+          touch /var/www/storage/logs/laravel.log
+          chmod -fv 664 /var/www/storage/logs/laravel.log
+          chown -fv www-data:www-data /var/www/storage/logs/laravel.log
+
+          if [ -f /var/www/.env ]; then
+            chown -f www-data:www-data /var/www/.env
+            chmod -fv 640 /var/www/.env
+          fi
+        securityContext:
+          runAsUser: 0
+          runAsGroup: 33
+        volumeMounts:
+        - name: storage-logs
+          mountPath: /var/www/storage
+        - name: bootstrap-cache
+          mountPath: /var/www/bootstrap/cache
+        - name: auth-config
+          mountPath: /var/www/config/auth.php
+          subPath: auth.php
+
+      - name: gen-laravel-env
+        image: busybox:1.35
+        command: [ "sh", "-c" ]
+        args:
+        - |
+          echo "[Init] Gerando .env para Laravel..."
+          printenv | grep -E '^(APP_|DB_|REDIS_|MAIL_|LOG_|SESSION_|AWS_|CACHE_|QUEUE_|BROADCAST_|PUSHER_|MIX_|SANCTUM_|TRUSTED_|GOOGLE_|GOVBR_|LOGIN_TYPE|SUPERUSER_|TELESCOPE_)' > /merged/.env
+        envFrom:
+        - configMapRef:
+            name: petrvs-env
+        - secretRef:
+            name: petrvs-secret-env
+        env:
+        - name: TELESCOPE_ENABLED
+          value: "0"
+        volumeMounts:
+        - name: merged-env
+          mountPath: /merged
+
+      containers:
+      - name: php-apache
+        image: segescginf/pgdpetrvs:2.3.16
+        command: [ "/bin/bash", "-c" ]
+        args:
+        - |
+          echo "[Init] Iniciando Apache..."
+          if [ ! -f /var/www/.env ]; then
+            echo "[ERROR] .env não encontrado em /var/www/.env"
+            exit 1
+          fi
+          a2enmod php
+          a2enmod rewrite
+          tail -F /var/www/storage/logs/laravel.log &
+          exec apache2ctl -D FOREGROUND
+        imagePullPolicy: IfNotPresent
+        envFrom:
+        - configMapRef:
+            name: petrvs-env
+        - secretRef:
+            name: petrvs-secret-env
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "600m"
+          limits:
+            memory: "4Gi"
+            cpu: "2"
+        securityContext:
+          runAsUser: 0
+          runAsGroup: 33
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        - name: https
+          containerPort: 443
+          protocol: TCP
+        volumeMounts:
+        - name: auth-config
+          mountPath: /var/www/config/auth.php
+          subPath: auth.php
+        - name: php-config
+          mountPath: /usr/local/etc/php/conf.d/custom-php.ini
+          subPath: php.ini
+        - name: apache-conf
+          mountPath: /etc/apache2/apache2.conf
+          subPath: apache2.conf
+        - name: remoteip-config
+          mountPath: /etc/apache2/conf-enabled/remoteip.conf
+          subPath: remoteip.conf
+        - name: storage-logs
+          mountPath: /var/www/storage
+        - name: bootstrap-cache
+          mountPath: /var/www/bootstrap/cache
+        - name: merged-env
+          mountPath: /var/www/.env
+          subPath: .env
+
+      volumes:
+      - name: auth-config
+        configMap:
+          name: petrvs-auth-config
+      - name: storage-logs
+        persistentVolumeClaim:
+          claimName: petrvs-storage-pvc
+      - name: bootstrap-cache
+        emptyDir: {}
+      - name: php-config
+        configMap:
+          name: petrvs-php-config
+          items:
+          - key: php.ini
+            path: php.ini
+      - name: apache-conf
+        configMap:
+          name: petrvs-php-config
+          items:
+          - key: apache2.conf
+            path: apache2.conf
+      - name: remoteip-config
+        configMap:
+          name: petrvs-php-config
+          items:
+          - key: remoteip.conf
+            path: remoteip.conf
+      - name: merged-env
+        emptyDir: {}

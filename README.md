@@ -1,2 +1,2 @@
 # pgd-petrvs-publico-kubernetes
-PGD ​​​​Petrvs MGI for Kubernetes with segescginf/pgdpetrvs docker image
+Projeto [Kustomize](https://kustomize.io/) do [PGD ​​​​Petrvs MGI](https://github.com/gestaogovbr/pgd-petrvs-publico) para Kubernetes com MariaDB Galera Cluster usando imagem Docker [segescginf/pgdpetrvs](https://hub.docker.com/r/segescginf/pgdpetrvs)

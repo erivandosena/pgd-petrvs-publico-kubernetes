@@ -1,0 +1,36 @@
+---
+# =====================================================================-
+# API Version: v1
+# Kind:       Service
+# Metadata:
+#   Name:     petrvs-php
+# ----------------------------------------------------------------------
+# Author:     erivandosena@gmail.com
+# Created:    2025-04-16
+# Version:    1.0.0
+# ----------------------------------------------------------------------
+# Description: Service configuration for PETRVS PHP application with:
+#              - Dual-port exposure (HTTP/HTTPS)
+#              - Port 80 → 8080 forwarding
+#              - Port 443 passthrough
+#              - Default ClusterIP service type
+#              - Optional LoadBalancer configuration (commented)
+# ----------------------------------------------------------------------
+# Usage:      kubectl apply -f svc-petrvs-php.yaml
+# =====================================================================-
+apiVersion: v1
+kind: Service
+metadata:
+  name: petrvs-php
+spec:
+  selector:
+    app: petrvs-php
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8080
+  - name: https
+    port: 443
+    targetPort: 443
+  # type: LoadBalancer
+  # loadBalancerIP: ""

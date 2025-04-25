@@ -1,0 +1,16 @@
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: petrvs-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
+    cert-manager.io/issuer: "letsencrypt-staging" # petrvs-cert-staging | letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - www.yourdomain-staging.com.br
+    secretName: petrvs-tls-le
+  rules:
+  - host: www.yourdomain-staging.com.br

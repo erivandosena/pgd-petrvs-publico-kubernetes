@@ -1,0 +1,30 @@
+---
+# =====================================================================-
+# API Version: v1
+# Kind:       PersistentVolumeClaim
+# Metadata:
+#   Name:     redis-pvc
+# ----------------------------------------------------------------------
+# Author:     erivandosena@gmail.com
+# Created:    2025-04-21
+# Version:    1.0.0
+# ----------------------------------------------------------------------
+# Description: Reivindicação de volume persistente para armazenar dados
+#              do serviço Redis utilizado pela aplicação Petrvs.
+# ----------------------------------------------------------------------
+# Usage:      kubectl apply -f pvc-redis.yaml
+# =====================================================================-
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-pvc
+  annotations:
+    nfs.io/storage-path: "data"
+spec:
+  storageClassName: nfs-storage
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  volumeMode: Filesystem

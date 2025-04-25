@@ -1,0 +1,42 @@
+# =====================================================================-
+# API Version: kustomize.config.k8s.io/v1beta1
+# Kind:       Kustomization
+# Metadata:
+#   Name:     petrvs-kustomization
+# ----------------------------------------------------------------------
+# Author:     erivandosena@gmail.com
+# Created:    2025-04-17
+# Version:    1.0.0
+# ----------------------------------------------------------------------
+# Description: Arquivo de customização Kustomize para gerenciar os
+#              recursos da aplicação Petrvs em diferentes ambientes.
+# ----------------------------------------------------------------------
+# Usage:      kubectl apply -k .
+# =====================================================================-
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+- secret-tls.yaml
+- secret-petrvs-env.yaml
+- pvc-redis.yaml
+- pvc-petrvs-storage.yaml
+- sa-rbac-mariadb.yaml
+- sa-rbac-petrvs-php.yaml
+- configmap-mariadb.yaml
+- configmap-mariadb-galera.yaml
+- configmap-petrvs-php.yaml
+- configmap-petrvs-env.yaml
+- configmap-petrvs-config-auth.yaml
+- deployment-redis.yaml
+- svc-redis.yaml
+- statefulset-mariadb.yaml
+- svc-mariadb-ha.yaml
+- deployment-petrvs-php.yaml
+- svc-petrvs-php.yaml
+- job-petrvs-db-init.yaml
+- deployment-petrvs-queue.yaml
+- svc-petrvs-queue.yaml
+- cronjob-petrvs-scheduler.yaml
+- ingress-petrvs.yaml
+- hpa-petrvs-php.yaml
