@@ -1,0 +1,51 @@
+---
+# letsencrypt-staging
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: letsencrypt-staging
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: your@mail.com
+    privateKeySecretRef:
+      name: letsencrypt-staging
+    solvers:
+    - http01:
+        ingress:
+          class: nginx
+---
+# letsencrypt-prod
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: your@mail.com
+    privateKeySecretRef:
+      name: letsencrypt-prod
+    solvers:
+    - http01:
+        ingress:
+          class: nginx
+---
+# Certificado TLS para staging
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: petrvs-cert-staging
+spec:
+  secretName: petrvs-cert-staging
+  issuerRef:
+    name: letsencrypt-staging
+    kind: Issuer
+  commonName: www.yourdomain.com.br
+  dnsNames:
+  - www.yourdomain.com.br
+  duration: 2160h # 90 dias
+  renewBefore: 360h # 15 dias antes do vencimento
+  privateKey:
+    algorithm: RSA
+    size: 2048

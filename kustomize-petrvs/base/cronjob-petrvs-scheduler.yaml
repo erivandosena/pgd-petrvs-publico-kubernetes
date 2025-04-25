@@ -1,0 +1,147 @@
+---
+# =====================================================================-
+# API Version: batch/v1
+# Kind:       CronJob
+# Metadata:
+#   Name:     petrvs-scheduler
+# ----------------------------------------------------------------------
+# Author:     erivandosena@gmail.com
+# Created:    2025-04-08
+# Version:    1.0.0
+# ----------------------------------------------------------------------
+# Description: CronJob responsável por agendar tarefas periódicas na
+#              aplicação Petrvs, como limpezas e atualizações.
+# ----------------------------------------------------------------------
+# Usage:      kubectl apply -f cronjob-petrvs-scheduler.yaml
+# =====================================================================-
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: petrvs-scheduler
+spec:
+  schedule: "*/10 * * * *"
+  successfulJobsHistoryLimit: 5
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          initContainers:
+          - name: gen-laravel-env
+            image: busybox:1.35
+            command: [ "sh", "-c" ]
+            args:
+            - |
+              echo "[Init] Gerando .env para Laravel..."
+              printenv | grep -E '^(APP_|DB_|REDIS_|MAIL_|LOG_|SESSION_|AWS_|CACHE_|QUEUE_|BROADCAST_|PUSHER_|MIX_|SANCTUM_|TRUSTED_|GOOGLE_|GOVBR_|LOGIN_TYPE|SUPERUSER_|TELESCOPE_)' > /merged/.env
+            envFrom:
+            - configMapRef:
+                name: petrvs-env
+            - secretRef:
+                name: petrvs-secret-env
+            volumeMounts:
+            - name: merged-env
+              mountPath: /merged
+
+          - name: prepare-psysh-directory
+            image: busybox:1.35
+            command: [ "sh", "-c" ]
+            args:
+            - |
+              echo "[Init] Criando diretório para PsySH..."
+              mkdir -p /var/www/.config/psysh
+              chmod -Rfv 777 /var/www/.config
+            securityContext:
+              runAsUser: 0
+            volumeMounts:
+            - name: psysh-config
+              mountPath: /var/www/.config
+
+          - name: wait-for-galera-synced
+            image: mariadb:11.3.2
+            command:
+            - bash
+            - -c
+            - |
+              echo "Aguardando Galera Cluster (estado Synced)..."
+              while true; do
+                ready_nodes=0
+                for i in 0 1 2; do
+                  state=$(mariadb -h mariadb-$i.mariadb.petrvs.svc.cluster.local -u$MARIADB_REPLICATION_USER -p$MARIADB_REPLICATION_PASSWORD -e "SHOW STATUS LIKE 'wsrep_local_state_comment';" 2>/dev/null | grep -w 'Synced')
+                  if [ ! -z "$state" ]; then
+                    ready_nodes=$((ready_nodes+1))
+                  fi
+                done
+                echo "$ready_nodes de 3 nós Galera sincronizados..."
+                if [ "$ready_nodes" -eq 3 ]; then
+                  echo "Todos os nós Galera estão Synced. Continuando..."
+                  break
+                fi
+                sleep 3
+              done
+            envFrom:
+            - configMapRef:
+                name: petrvs-env
+            - secretRef:
+                name: petrvs-secret-env
+
+          containers:
+          - name: scheduler
+            image: segescginf/pgdpetrvs:2.3.16
+            command: [ "/bin/bash", "-c" ]
+            args:
+            - |
+              echo "[Cron] Iniciando tarefa agendada Laravel."
+              if [ ! -f /var/www/.env ]; then
+                echo "[Cron] Erro: Arquivo .env não encontrado."
+                exit 1
+              fi
+
+              echo "[Cron] Verificando existência da tabela 'jobs_schedules' com migrate:status..."
+              if php artisan migrate:status | grep -q jobs_schedules; then
+                echo "[Cron] Tabela 'jobs_schedules' encontrada. Executando schedule..."
+              else
+                echo "[Cron] Tabela 'jobs_schedules' não detectada."
+                exit 0
+              fi
+
+              export TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+              echo "[$TIMESTAMP] Executando: php artisan schedule:run" >> /var/www/storage/logs/scheduler.log
+              php artisan schedule:run >> /var/www/storage/logs/scheduler.log 2>&1
+              echo "[$TIMESTAMP] Execução concluída." >> /var/www/storage/logs/scheduler.log
+
+            imagePullPolicy: IfNotPresent
+            resources:
+              requests:
+                cpu: "50m"
+                memory: "64Mi"
+              limits:
+                cpu: "100m"
+                memory: "128Mi"
+            envFrom:
+            - configMapRef:
+                name: petrvs-env
+            - secretRef:
+                name: petrvs-secret-env
+            readinessProbe:
+              exec:
+                command: [ "php", "artisan", "schedule:list" ]
+              initialDelaySeconds: 10
+              periodSeconds: 30
+            volumeMounts:
+            - name: storage-logs
+              mountPath: /var/www/storage
+            - name: psysh-config
+              mountPath: /var/www/.config
+            - name: merged-env
+              mountPath: /var/www/.env
+              subPath: .env
+          volumes:
+          - name: storage-logs
+            persistentVolumeClaim:
+              claimName: petrvs-storage-pvc
+          - name: psysh-config
+            emptyDir: {}
+          - name: merged-env
+            emptyDir: {}

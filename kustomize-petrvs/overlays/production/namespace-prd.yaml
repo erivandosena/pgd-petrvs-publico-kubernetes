@@ -1,0 +1,17 @@
+---
+# =====================================================================-
+# API Version: v1
+# Kind:       Namespace
+# Metadata:
+#   Name:     petrvs-prd
+# ----------------------------------------------------------------------
+# Author:     erivandosena@gmail.com
+# Created:    2025-04-22
+# Version:    1.0.0
+# ----------------------------------------------------------------------
+# Usage:      kubectl apply -f namespace-prd.yaml
+# =====================================================================-
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: petrvs

@@ -1,0 +1,48 @@
+---
+# =====================================================================-
+# API Version: networking.k8s.io/v1
+# Kind:       Ingress
+# Metadata:
+#   Name:     petrvs-ingress
+# ----------------------------------------------------------------------
+# Author:     erivandosena@gmail.com
+# Created:    2025-04-45
+# Version:    1.0.0
+# ----------------------------------------------------------------------
+# Description: Recurso Ingress para expor os serviços da aplicação Petrvs,
+#              definindo regras de roteamento HTTP e HTTPS.
+# ----------------------------------------------------------------------
+# Usage:      kubectl apply -f ingress-petrvs.yaml
+# =====================================================================-
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: petrvs-ingress
+  annotations:
+    # haproxy.org/ssl-certificate: "/etc/haproxy/certs/tls.pem"
+    # haproxy.org/check: "true"
+    # haproxy.org/forwarded-for: "true"
+    # haproxy.org/load-balance: "roundrobin"
+    # haproxy.org/proxy-body-size: "0"
+    # haproxy.org/ssl-redirect: "true"
+    # haproxy.org/websocket: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/x-forwarded-for: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - www.yourdomain.com.br
+    secretName: petrvs-tls
+  rules:
+  - host: www.yourdomain.com.br
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: petrvs-php
+            port:
+              number: 80

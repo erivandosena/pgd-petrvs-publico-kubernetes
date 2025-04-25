@@ -1,0 +1,34 @@
+---
+# =====================================================================-
+# API Version: networking.k8s.io/v1
+# Kind:       Ingress
+# Metadata:
+#   Name:     petrvs-ingress
+# ----------------------------------------------------------------------
+# Author:     erivandosena@gmail.com
+# Created:    2025-04-25
+# Version:    1.0.0
+# ----------------------------------------------------------------------
+# Usage:      Applied via kustomize patch
+# =====================================================================-
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: petrvs-ingress
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - www.yourdomain.com.br
+    secretName: petrvs-tls # CERTs Wildcard/GlobalSign
+  rules:
+  - host: www.yourdomain.com.br
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: petrvs-php
+            port:
+              number: 80

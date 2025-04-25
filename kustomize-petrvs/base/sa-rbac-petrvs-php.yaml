@@ -1,0 +1,41 @@
+---
+# =====================================================================-
+# API Version: v1
+# Kind:       ServiceAccount
+# Metadata:
+#   Name:     petrvs-php-sa
+# ----------------------------------------------------------------------
+# Author:     erivandosena@gmail.com
+# Created:    2025-04-23
+# Version:    1.0.0
+# ----------------------------------------------------------------------
+# Description: Conta de serviço e configurações de RBAC para o backend
+#              PHP da aplicação Petrvs.
+# ----------------------------------------------------------------------
+# Usage:      kubectl apply -f sa-rbac-petrvs-php.yaml
+# =====================================================================-
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: petrvs-app-sa
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: petrvs-app-role
+rules:
+- apiGroups: [ "batch" ]
+  resources: [ "jobs" ]
+  verbs: [ "get", "list", "watch" ]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: petrvs-app-rolebinding
+subjects:
+- kind: ServiceAccount
+  name: petrvs-app-sa
+roleRef:
+  kind: Role
+  name: petrvs-app-role
+  apiGroup: rbac.authorization.k8s.io

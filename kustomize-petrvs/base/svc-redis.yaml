@@ -1,0 +1,30 @@
+---
+# =====================================================================-
+# API Version: v1
+# Kind:       Service
+# Metadata:
+#   Name:     petrvs-redis
+# ----------------------------------------------------------------------
+# Author:     erivandosena@gmail.com
+# Created:    2025-04-18
+# Version:    1.0.0
+# ----------------------------------------------------------------------
+# Description: Service configuration for Redis cache with:
+#              - Standard Redis port (6379)
+#              - Direct port mapping
+#              - ClusterIP service type
+#              - Integration with Redis stateful pods
+# ----------------------------------------------------------------------
+# Usage:      kubectl apply -f svc-redis.yaml
+# =====================================================================-
+apiVersion: v1
+kind: Service
+metadata:
+  name: petrvs-redis
+spec:
+  selector:
+    app: petrvs-redis
+  ports:
+  - port: 6379
+    targetPort: 6379
+  type: ClusterIP

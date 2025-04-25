@@ -1,0 +1,30 @@
+---
+# =====================================================================-
+# API Version: v1
+# Kind:       Service
+# Metadata:
+#   Name:     petrvs-queue
+# ----------------------------------------------------------------------
+# Author:     erivandosena@gmail.com
+# Created:    2025-04-17
+# Version:    1.0.0
+# ----------------------------------------------------------------------
+# Description: Service configuration for PETRVS Queue system with:
+#              - Single-port service (9000)
+#              - Direct port-to-port mapping
+#              - ClusterIP service type
+#              - Integration with queue worker pods
+# ----------------------------------------------------------------------
+# Usage:      kubectl apply -f svc-petrvs-queue.yaml
+# =====================================================================-
+apiVersion: v1
+kind: Service
+metadata:
+  name: petrvs-queue
+spec:
+  selector:
+    app: petrvs-queue
+  ports:
+  - port: 9000
+    targetPort: 9000
+  type: ClusterIP

@@ -1,0 +1,122 @@
+---
+# =====================================================================-
+# API Version: v1
+# Kind:       ConfigMap
+# Metadata:
+#   Name:     petrvs-config-auth
+# ----------------------------------------------------------------------
+# Author:     erivandosena@gmail.com
+# Created:    2025-04-03
+# Version:    1.0.0
+# ----------------------------------------------------------------------
+# Description: Configurações de autenticação para a aplicação Petrvs,
+#              incluindo parâmetros de segurança e tokens.
+# ----------------------------------------------------------------------
+# Usage:      kubectl apply -f configmap-petrvs-config-auth.yaml
+# =====================================================================-
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+    name: petrvs-auth-config
+data:
+    auth.php: |
+        <?php
+
+        return [
+            /*
+            |----------------------------------------------------------------------
+            | Authentication Defaults
+            |----------------------------------------------------------------------
+            |
+            | Default authentication and password options.
+            |
+            */
+
+            'defaults' => [
+                'guard' => 'web',
+                'passwords' => 'users',
+            ],
+
+            /*
+            |----------------------------------------------------------------------
+            | Authentication Guards
+            |----------------------------------------------------------------------
+            |
+            | Define authentication guards for application.
+            | User provider retrieves data from storage.
+            |
+            | Supported: "session", "token"
+            |
+            */
+
+            'guards' => [
+                'web' => [
+                    'driver' => 'session',
+                    'provider' => 'users',
+                ],
+                'api' => [
+                    'driver' => 'token',
+                    'provider' => 'users',
+                    'hash' => false,
+                ],
+                'painel' => [
+                    'driver' => 'session',
+                    'provider' => 'painel_users',
+                ]
+            ],
+
+            /*
+            |----------------------------------------------------------------------
+            | User Providers
+            |----------------------------------------------------------------------
+            |
+            | User provider retrieves users from storage.
+            | Configure sources for user models.
+            |
+            | Supported: "database", "eloquent"
+            |
+            */
+
+            'providers' => [
+                'users' => [
+                    'driver' => 'eloquent',
+                    'model' => App\Models\PainelUsuario::class,
+                ],
+                'painel_users' => [
+                    'driver' => 'eloquent',
+                    'model' => App\Models\PainelUsuario::class,
+                ],
+            ],
+
+            /*
+            |----------------------------------------------------------------------
+            | Resetting Passwords
+            |----------------------------------------------------------------------
+            |
+            | Multiple password reset configurations possible.
+            | Token validity time can be adjusted.
+            |
+            */
+
+            'passwords' => [
+                'users' => [
+                    'provider' => 'users',
+                    'table' => '',
+                    'expire' => 60,
+                    'throttle' => 60,
+                ],
+            ],
+
+            /*
+            |----------------------------------------------------------------------
+            | Password Confirmation Timeout
+            |----------------------------------------------------------------------
+            |
+            | Password confirmation timeout is three hours.
+            |
+            */
+
+            'password_timeout' => 10800,
+
+        ];

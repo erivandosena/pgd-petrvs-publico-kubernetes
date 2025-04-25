@@ -1,0 +1,84 @@
+---
+# =====================================================================-
+# API Version: v1
+# Kind:       ConfigMap
+# Metadata:
+#   Name:     petrvs-php-config
+# ----------------------------------------------------------------------
+# Author:     erivandosena@gmail.com
+# Created:    2025-04-07
+# Version:    1.0.0
+# ----------------------------------------------------------------------
+# Description: Configurações específicas do PHP para a aplicação Petrvs,
+#              incluindo parâmetros de desempenho e diretivas.
+# ----------------------------------------------------------------------
+# Usage:      kubectl apply -f configmap-petrvs-php.yaml
+# =====================================================================-
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: petrvs-php-config
+data:
+  php.ini: |
+    # -----------------------------------------
+    # PHP Configuration Laravel para Kubernetes
+    # -----------------------------------------
+    memory_limit = 512M
+    upload_max_filesize = 100M
+    post_max_size = 100M
+    max_execution_time = 300
+    date.timezone = America/Fortaleza
+
+    ; Extensões comuns para Laravel
+    ; extension=curl.so
+    extension=mbstring.so
+    extension=pdo_mysql.so
+    extension=openssl.so
+    extension=fileinfo.so
+
+    ; Para segurança e debug
+    display_errors = Off
+    expose_php = Off
+    error_reporting = E_ALL & ~E_DEPRECATED & ~E_STRICT
+    log_errors = On
+    error_log = /var/log/php_errors.log
+
+  apache2.conf: |
+    # -----------------------------------------
+    # Apache2 Configuration para Kubernetes
+    # -----------------------------------------
+    ServerName www.yourdomain.com.br
+
+    User www-data
+    Group www-data
+    PidFile /tmp/apache2.pid
+
+    Timeout 60
+    KeepAlive On
+    MaxKeepAliveRequests 100
+    KeepAliveTimeout 5
+
+    Listen 8080
+    DocumentRoot /var/www/public
+    DirectoryIndex index.php index.html
+
+    <Directory /var/www/public>
+        Options FollowSymLinks
+        AllowOverride All
+        Require all granted
+    </Directory>
+
+    ErrorLog /var/log/apache2/error.log
+    CustomLog /var/log/apache2/access.log combined
+
+    IncludeOptional conf-enabled/*.conf
+    IncludeOptional mods-enabled/*.load
+    IncludeOptional mods-enabled/*.conf
+
+  remoteip.conf: |
+    # -----------------------------------------
+    # Configuração do módulo remoteip para Ingress
+    # -----------------------------------------
+    LoadModule remoteip_module /usr/lib/apache2/modules/mod_remoteip.so
+    RemoteIPHeader X-Forwarded-For
+    RemoteIPInternalProxy 10.0.0.0/8
